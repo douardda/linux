@@ -265,6 +265,17 @@
                 #size-cells = <0>;
                 use_pio = <0>;
                 master_i2c_speed = <100000>;
+		
+     pcm5142: pcm5142@4d{
+	    	compatible = "ti,pcm5142";
+		reg = <0x4d>;
+		status = "okay";
+   /* can be used to configure the clk of a the PlainDSP-BBB
+         	clocks = <&sck>;
+   		pll-in = <1>;
+		pll-out = <3>;
+   */
+   	   };
         };
 
         i2c@c11087c0{ /*I2C-B*/
@@ -420,7 +431,7 @@
         status = "okay";
     };
 
-    pcm5102{
+    pcm5102: pcm5102{
         compatible = "hardkernel,pcm5102";
         dev_name = "pcm5102.0";
         status = "okay";
@@ -433,12 +444,15 @@
         status = "okay";
     };
 
-    odroid_sound_card{
-        compatible = "sound_card, odroid_snd";
-        aml,sound_card = "ODROID-DAC";
+    plaindac{
+        compatible = "polyvection,odroidc-plaindac";
+	// I2S configuration
         pinctrl-names = "odroid_i2s";
         pinctrl-0 = <&audio_pins>;
-        status = "okay";
+	// Example for a PlainDSP DAC
+	polyvection,audio-codec = <&pcm5142>;
+	polyvection,model = "plaindsp";
+	status = "okay";
     };
 
         saradc{

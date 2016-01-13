@@ -9,6 +9,22 @@ config SND_AML_M8
 	select SND_SOC_PCM5102 if MACH_MESON8B_ODROIDC
     select SND_SOC_DUMMY_CODEC
 
+config SND_SOC_ODROID
+	tristate "AML M8 Soc Audio (generic I2S DAC)"
+	depends on SND_AML_M8_SOC && SWITCH
+	select SND_SOC_AML_M8_CODEC if SND_AML_M8
+	help
+	  Say Y or M if you want to add support for generic I2S DAC
+
+config SND_SOC_ODROID_PLAINDAC
+	tristate "AML M8 Soc Audio for the PolyVection PlainDAC/PlainDSP"
+	depends on SND_AML_M8_SOC && SWITCH
+	select I2C_AML
+	select SND_SOC_PCM512x_I2C
+	help
+	  Say Y or M if you want to add support for the PolyVecition PlainDAC
+	  using a PCM512x DAC.
+	  
 config SND_AML_M8_PCM
 	tristate "M8 evaluation board with PCM2BT"
 	depends on SND_AML_M8_SOC
