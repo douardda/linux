@@ -15,6 +15,7 @@
  */
 
 
+#include <linux/slab.h>
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/clk.h>
@@ -55,6 +56,7 @@ struct pcm512x_priv {
 	int pll_d;
 	int pll_p;
 	unsigned long real_pll;
+        int n_supplies;
 };
 
 /*
@@ -1267,7 +1269,9 @@ EXPORT_SYMBOL_GPL(pcm512x_regmap);
 int pcm512x_probe(struct device *dev, struct regmap *regmap)
 {
 	struct pcm512x_priv *pcm512x;
-	int i, ret;
+	int i, j, ret;
+	struct device_node *regnode = NULL;
+	char prop_name[32]; /* 32 is max size of property name */
 
 	pcm512x = devm_kzalloc(dev, sizeof(struct pcm512x_priv), GFP_KERNEL);
 	if (!pcm512x)
@@ -1276,21 +1280,35 @@ int pcm512x_probe(struct device *dev, struct regmap *regmap)
 	dev_set_drvdata(dev, pcm512x);
 	pcm512x->regmap = regmap;
 
-	for (i = 0; i < ARRAY_SIZE(pcm512x->supplies); i++)
-		pcm512x->supplies[i].supply = pcm512x_supply_names[i];
+	for (i = 0, j = 0; i < ARRAY_SIZE(pcm512x->supplies); i++)
+	{
+	  dev_dbg(dev, "Looking up %s-supply from device tree\n",
+		  pcm512x_supply_names[i]);
 
-	ret = devm_regulator_bulk_get(dev, ARRAY_SIZE(pcm512x->supplies),
-				      pcm512x->supplies);
-	if (ret != 0) {
-		dev_err(dev, "Failed to get supplies: %d\n", ret);
-		return ret;
+	  snprintf(prop_name, 32, "%s-supply", pcm512x_supply_names[i]);
+	  regnode = of_parse_phandle(dev->of_node, prop_name, 0);
+	  if (regnode) {
+	    pcm512x->supplies[j].supply = pcm512x_supply_names[i];
+	    j++;
+	    kfree(regnode);
+	  }
 	}
+	pcm512x->n_supplies = j;
 
-	pcm512x->supply_nb[0].notifier_call = pcm512x_regulator_event_0;
-	pcm512x->supply_nb[1].notifier_call = pcm512x_regulator_event_1;
-	pcm512x->supply_nb[2].notifier_call = pcm512x_regulator_event_2;
+	if (pcm512x->n_supplies)
+	{
+	  ret = devm_regulator_bulk_get(dev, pcm512x->n_supplies,
+				      pcm512x->supplies);
+	  if (ret != 0) {
+	    dev_err(dev, "Failed to get supplies: %d\n", ret);
+	    return ret;
+	  }
 
-	for (i = 0; i < ARRAY_SIZE(pcm512x->supplies); i++) {
+	  pcm512x->supply_nb[0].notifier_call = pcm512x_regulator_event_0;
+	  pcm512x->supply_nb[1].notifier_call = pcm512x_regulator_event_1;
+	  pcm512x->supply_nb[2].notifier_call = pcm512x_regulator_event_2;
+
+	  for (i = 0; i < pcm512x->n_supplies; i++) {
 		ret = regulator_register_notifier(pcm512x->supplies[i].consumer,
 						  &pcm512x->supply_nb[i]);
 		if (ret != 0) {
@@ -1298,13 +1316,14 @@ int pcm512x_probe(struct device *dev, struct regmap *regmap)
 				"Failed to register regulator notifier: %d\n",
 				ret);
 		}
-	}
+	  }
 
-	ret = regulator_bulk_enable(ARRAY_SIZE(pcm512x->supplies),
-				    pcm512x->supplies);
-	if (ret != 0) {
-		dev_err(dev, "Failed to enable supplies: %d\n", ret);
-		return ret;
+	  ret = regulator_bulk_enable(pcm512x->n_supplies,
+				      pcm512x->supplies);
+	  if (ret != 0) {
+	    dev_err(dev, "Failed to enable supplies: %d\n", ret);
+	    return ret;
+	  }
 	}
 
 	/* Reset the device, verifying I/O in the process for I2C */
@@ -1397,7 +1416,7 @@ err_clk:
 	if (!IS_ERR(pcm512x->sclk))
 		clk_disable_unprepare(pcm512x->sclk);
 err:
-	regulator_bulk_disable(ARRAY_SIZE(pcm512x->supplies),
+	regulator_bulk_disable(pcm512x->n_supplies,
 				     pcm512x->supplies);
 	return ret;
 }
@@ -1411,7 +1430,7 @@ void pcm512x_remove(struct device *dev)
 	pm_runtime_disable(dev);
 	if (!IS_ERR(pcm512x->sclk))
 		clk_disable_unprepare(pcm512x->sclk);
-	regulator_bulk_disable(ARRAY_SIZE(pcm512x->supplies),
+	regulator_bulk_disable(pcm512x->n_supplies,
 			       pcm512x->supplies);
 }
 EXPORT_SYMBOL_GPL(pcm512x_remove);
@@ -1429,7 +1448,7 @@ static int pcm512x_suspend(struct device *dev)
 		return ret;
 	}
 
-	ret = regulator_bulk_disable(ARRAY_SIZE(pcm512x->supplies),
+	ret = regulator_bulk_disable(pcm512x->n_supplies,
 				     pcm512x->supplies);
 	if (ret != 0) {
 		dev_err(dev, "Failed to disable supplies: %d\n", ret);
@@ -1455,7 +1474,7 @@ static int pcm512x_resume(struct device *dev)
 		}
 	}
 
-	ret = regulator_bulk_enable(ARRAY_SIZE(pcm512x->supplies),
+	ret = regulator_bulk_enable(pcm512x->n_supplies,
 				    pcm512x->supplies);
 	if (ret != 0) {
 		dev_err(dev, "Failed to enable supplies: %d\n", ret);
